@@ -27,6 +27,10 @@ DIMPLES = [(180,11.5,8.0),(0,11.5,8.0)]   # blind circles, 0.4 deep
 TAB_ANG = [45,135,225,315]; TAB_R=14.0; TAB_L=8.0; TAB_W=3.0; TAB_H=1.5
 RIB_ANG = [-90, 90]; RIB_SPAN=40; RIB_Z=9.0; RIB_T=1.2; RIB_PROJ=1.6; RIB_H=1.4
 PLAT_OD = 26.0; PLAT_T=1.2; PLAT_H=6.0     # inner stepped ring under end plate
+POST_D=5.0; POST_HOLE=1.6; POST_ANG=-90; POST_Z0=12.0   # snap post beside a rib (guess)
+KEY_ANG=[0,180]; KEY_W=1.2; KEY_PROJ=1.2; KEY_LEN=10.0   # thin vertical key ribs near rim
+import os
+TEST_SLICE_H = float(os.environ.get('TEST_SLICE_H', 0))    # >0: export only the lowest N mm (fast fit-test of rim/ribs), e.g. 15
 SEG = 96
 
 def revolve(pts):
@@ -51,22 +55,27 @@ body = body + plat
 
 # raised tabs on end face
 for a in TAB_ANG:
-    t = Manifold.cube([TAB_L, TAB_W, TAB_H+0.5], True).translate([0,0,(TAB_H+0.5)/2])
-    t = t.rotate([0,0,0]).translate([TAB_R,0,0]).rotate([0,0,a+90-90])
-    # orient long side tangential: cube long axis is X; after translating to +X radial, rotate local 90
     t = Manifold.cube([TAB_W, TAB_L, TAB_H+0.5], True).translate([TAB_R,0,(TAB_H+0.5)/2]).rotate([0,0,a])
     body = body + t.translate([0,0,H-0.5])
 
 # inner snap ribs (arcs on the inner wall)
-rin = r(LOW_OD0)-WALL - (RIM_Z:=0)*0
 for a in RIB_ANG:
     ro = r(LOW_OD0) - WALL + 0.3  # embed into wall
     ri = ro - RIB_PROJ - 0.3
     arc = (cyl(2*ro, RIB_H, RIB_Z) - cyl(2*ri, RIB_H+1, RIB_Z-0.5))
-    wedge = Manifold.cube([60,60,RIB_H+2],False).translate([0,-30,RIB_Z-1])
     # keep only a RIB_SPAN-degree sector
     sec = CrossSection([[(0,0)]+[(60*math.cos(math.radians(RIB_SPAN/2*s)),60*math.sin(math.radians(RIB_SPAN/2*s))) for s in np.linspace(-1,1,12)]]).extrude(RIB_H+2).translate([0,0,RIB_Z-1])
     body = body + (arc ^ sec.rotate([0,0,a]))
+
+# snap post with pilot hole, standing off the wall
+ro_w = r(LOW_OD0)-WALL
+px,py = (ro_w-POST_D/2-0.4)*math.cos(math.radians(POST_ANG)), (ro_w-POST_D/2-0.4)*math.sin(math.radians(POST_ANG))
+post = cyl(POST_D, 6.0, POST_Z0, px, py) - cyl(POST_HOLE, 7.0, POST_Z0-0.5, px, py)
+body = body + post
+# vertical key ribs just above the flange
+for a in KEY_ANG:
+    k = Manifold.cube([KEY_PROJ+0.5, KEY_W, KEY_LEN], False).translate([ro_w-KEY_PROJ, -KEY_W/2, RIM_H]).rotate([0,0,a])
+    body = body + k
 
 # holes through end plate
 for ang,rad,d in HOLES:
@@ -77,8 +86,10 @@ for ang,rad,d in DIMPLES:
     x,y = rad*math.cos(math.radians(ang)), rad*math.sin(math.radians(ang))
     body = body - cyl(d, 1, H-0.4, x, y)
 
+if TEST_SLICE_H > 0:
+    body = body ^ cyl(100, TEST_SLICE_H)
 mesh = body.to_mesh()
 import trimesh
 m = trimesh.Trimesh(mesh.vert_properties[:,:3], mesh.tri_verts)
 print("watertight:", m.is_watertight, "bbox mm:", m.extents.round(1), "volume cm3:", round(m.volume/1000,2))
-m.export(__file__.replace("nozzle_cap.py","nozzle_cap.stl"))
+m.export(os.path.join(os.path.dirname(os.path.abspath(__file__)), "nozzle_cap_test_slice.stl" if TEST_SLICE_H>0 else "nozzle_cap.stl"))
