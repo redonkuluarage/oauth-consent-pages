@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#a86a22">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Caliper">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Photo Caliper</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+  html,body{margin:0}
+  body{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);min-height:100vh}
+  /* layout: single column of stacked cards; photo stage is a pan/zoom viewport with an SVG overlay registered to image pixels */
+  :root{
+    --bg:#eef0f2; --surface:#ffffff; --surface-2:#f6f7f8; --border:#d7dce1;
+    --fg:#1b2027; --fg-muted:#5b6572;
+    --accent:#a86a22; --accent-fg:#ffffff; --accent-soft:#f1e3d0;
+    --danger:#b23a2e; --success:#2f7a52; --warn:#9a6a00;
+    --ref:#3b6ea5;
+    --font-body:'Inter',system-ui,sans-serif; --font-head:'Space Grotesk',system-ui,sans-serif; --font-mono:'JetBrains Mono',ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14171b; --surface:#1c2128; --surface-2:#20262e; --border:#30373f;
+      --fg:#e8eaed; --fg-muted:#9aa3ad;
+      --accent:#e3a055; --accent-fg:#1b1204; --accent-soft:#3a2d1a;
+      --danger:#e0675a; --success:#5bbf86; --warn:#e0b04a;
+      --ref:#6fa3dd; color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14171b; --surface:#1c2128; --surface-2:#20262e; --border:#30373f;
+    --fg:#e8eaed; --fg-muted:#9aa3ad;
+    --accent:#e3a055; --accent-fg:#1b1204; --accent-soft:#3a2d1a;
+    --danger:#e0675a; --success:#5bbf86; --warn:#e0b04a;
+    --ref:#6fa3dd; color-scheme:dark;
+  }
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--fg); font-family:var(--font-body); margin:0;
+    padding-left:max(16px, env(safe-area-inset-left,0px));
+    padding-right:max(16px, env(safe-area-inset-right,0px));
+  }
+  .app{max-width:600px; margin:0 auto; padding-block:20px 48px; display:flex; flex-direction:column; gap:16px;}
+  h1,h2{font-family:var(--font-head); margin:0; text-wrap:balance;}
+  h1{font-size:1.5rem; font-weight:700;}
+  h2{font-size:1.05rem; font-weight:700;}
+  .sub{color:var(--fg-muted); font-size:0.9rem; margin-top:2px; line-height:1.45;}
+  .mono{font-family:var(--font-mono); font-variant-numeric:tabular-nums;}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:12px; min-width:0;}
+
+  details.tips{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px 16px;}
+  details.tips summary{cursor:pointer; font-weight:600; font-family:var(--font-head); list-style:none; display:flex; align-items:center; justify-content:space-between; gap:8px;}
+  details.tips summary::-webkit-details-marker{display:none;}
+  details.tips summary::after{content:'+'; font-size:1.2rem; color:var(--fg-muted); transition:transform .15s;}
+  details.tips[open] summary::after{transform:rotate(45deg);}
+  .tips p{margin:10px 0 8px; font-size:0.88rem; color:var(--fg-muted); line-height:1.5;}
+  .tips ol{margin:8px 0 8px; padding-left:20px; font-size:0.88rem; color:var(--fg-muted); line-height:1.5;}
+  .refgrid{display:grid; grid-template-columns:1fr auto; gap:4px 10px; font-size:0.85rem; margin-top:6px;}
+  .refgrid .v{color:var(--fg-muted); text-align:right;}
+
+  button{font:inherit; cursor:pointer; border-radius:10px; border:1px solid var(--border); background:var(--surface-2); color:var(--fg); padding:10px 14px; font-weight:600; font-size:0.9rem;}
+  button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  button.primary{background:var(--accent); color:var(--accent-fg); border-color:transparent;}
+  button.danger{background:transparent; color:var(--danger); border-color:var(--danger);}
+  button:disabled{opacity:0.4; cursor:not-allowed;}
+  .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  .toolgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px;}
+  .toolgrid button{padding:10px 8px;}
+  button.tool.on{background:var(--accent-soft); border-color:var(--accent);}
+
+  .empty{border:1.5px dashed var(--border); border-radius:12px; padding:22px 16px; text-align:center; color:var(--fg-muted); font-size:0.9rem; line-height:1.5;}
+  .status{font-size:0.88rem; background:var(--accent-soft); border-radius:10px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;}
+  .status .row{gap:6px;}
+  .status button{padding:6px 10px; font-size:0.8rem;}
+
+  .stagebox{position:relative; min-width:0;}
+  .stage{position:relative; width:100%; height:62vh; min-height:280px; overflow:auto; border-radius:12px; border:1px solid var(--border); touch-action:none; background:repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 0/20px 20px;}
+  .stage.placing{cursor:crosshair;}
+  .wrap{position:relative;}
+  .wrap img{display:block; width:100%; height:100%; -webkit-user-select:none; user-select:none; pointer-events:none;}
+  .wrap svg{position:absolute; inset:0; width:100%; height:100%;}
+  #loupe{position:absolute; top:8px; left:8px; width:112px; height:112px; border-radius:50%; border:2px solid var(--accent); box-shadow:0 2px 10px rgba(0,0,0,.35); pointer-events:none; background:var(--surface);}
+  #loupe[hidden]{display:none!important;}
+
+  .zoomrow{display:flex; align-items:center; gap:10px; font-size:0.82rem; color:var(--fg-muted);}
+  .zoomrow input[type=range]{flex:1; accent-color:var(--accent); min-width:0;}
+  .hint{font-size:0.78rem; color:var(--fg-muted);}
+
+  .badge{font-size:0.82rem; padding:7px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--border); display:flex; gap:6px; align-items:center; flex-wrap:wrap;}
+  .badge.ok{color:var(--success);} .badge.warn{color:var(--fg-muted);} .badge.bad{color:var(--warn);}
+
+  .panel{border:1px solid var(--accent); background:var(--accent-soft); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:10px;}
+  .panel label{font-size:0.82rem; font-weight:600;}
+  input[type=text], input[type=number]{font:inherit; padding:9px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--fg); width:100%;}
+  .chips{display:flex; flex-wrap:wrap; gap:6px;}
+  .chip{font-size:0.78rem; padding:6px 10px; border-radius:999px; border:1px solid var(--border); background:var(--surface); font-weight:500;}
+  .chip.active{background:var(--accent); color:var(--accent-fg); border-color:transparent;}
+  .readout{font-size:1.1rem; font-weight:700;}
+  .nudge{display:flex; flex-wrap:wrap; gap:6px; align-items:center;}
+  .nudge .pts button{padding:6px 10px; font-size:0.8rem;}
+  .nudge .pts button.on{background:var(--accent); color:var(--accent-fg); border-color:transparent;}
+  .nudge .arrows{display:grid; grid-template-columns:repeat(3,40px); grid-template-rows:repeat(2,34px); gap:4px;}
+  .nudge .arrows button{padding:0; font-size:1rem;}
+  .nudge .arrows .u{grid-column:2; grid-row:1;} .nudge .arrows .l{grid-column:1; grid-row:2;} .nudge .arrows .d{grid-column:2; grid-row:2;} .nudge .arrows .r{grid-column:3; grid-row:2;}
+
+  .unittoggle{display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden;}
+  .unittoggle button{border:none; border-radius:0; padding:6px 12px; font-size:0.8rem;}
+  .unittoggle button.on{background:var(--accent); color:var(--accent-fg);}
+
+  .mlist{display:flex; flex-direction:column; gap:8px;}
+  .mrow{background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; gap:2px;}
+  .mrow.hl{border-color:var(--accent); background:var(--accent-soft);}
+  .mrow .top{display:flex; align-items:center; gap:8px;}
+  .mrow input{flex:1; min-width:0; font:inherit; font-size:0.88rem; background:transparent; border:none; color:var(--fg); padding:4px 0; width:auto;}
+  .mrow .val{font-size:0.95rem; white-space:nowrap;}
+  .mrow .del{border:none; background:transparent; color:var(--fg-muted); padding:4px 6px; font-size:1rem; font-weight:700;}
+  .mrow .del:hover{color:var(--danger);}
+  .mrow .meta{border:none; background:transparent; padding:0; text-align:left; font-weight:500; font-size:0.74rem; color:var(--fg-muted);}
+  .emptylist{color:var(--fg-muted); font-size:0.85rem; padding:6px 2px;}
+  .toast{position:fixed; left:50%; bottom:max(20px, env(safe-area-inset-bottom,0px)); transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:8px 16px; border-radius:999px; font-size:0.85rem; opacity:0; pointer-events:none; transition:opacity .2s; max-width:90vw; text-align:center;}
+  .toast.show{opacity:1;}
+  textarea.copyfallback{width:100%; height:120px; font-family:var(--font-mono); font-size:0.78rem; background:var(--surface-2); color:var(--fg); border:1px solid var(--border); border-radius:8px; padding:8px;}
+</style>
+</head><body>
+<div class="app">
+  <div>
+    <h1>Photo Caliper</h1>
+    <div class="sub">Measure real objects from a photo using a reference object of known size. No hardware needed.</div>
+  </div>
+
+  <details class="tips" open id="tipsBox">
+    <summary>How it works and accuracy tips</summary>
+    <ol>
+      <li>Photograph the part straight on, phone parallel to the surface, with a reference of known size lying flat in the same plane as the feature you will measure.</li>
+      <li>Press <strong>Set Reference</strong>, tap both ends of the reference, enter its real length.</li>
+      <li>Use <strong>Distance</strong> for lengths, or <strong>Circle</strong> (three points on the edge) for hole and rim diameters.</li>
+      <li>Press and drag on the photo to place a point. A magnifier shows the exact spot; release to drop it. Two fingers pinch to zoom and pan.</li>
+      <li>Use <strong>Check Scale</strong> on a second known length. If the error is over 3%, the phone was tilted: retake the photo.</li>
+    </ol>
+    <p>Depth is not measured. Take a separate photo for each plane, such as a top-down shot for hole sizes and a side shot with a ruler for height. Typical error is 1 to 3%.</p>
+    <p style="margin-bottom:4px; font-weight:600; color:var(--fg);">Handy reference sizes</p>
+    <div class="refgrid">
+      <div>US quarter (diameter)</div><div class="v mono">24.26 mm</div>
+      <div>US nickel (diameter)</div><div class="v mono">21.21 mm</div>
+      <div>US penny (diameter)</div><div class="v mono">19.05 mm</div>
+      <div>US dime (diameter)</div><div class="v mono">17.91 mm</div>
+      <div>Credit or ID card (long edge)</div><div class="v mono">85.60 mm</div>
+      <div>Credit or ID card (short edge)</div><div class="v mono">53.98 mm</div>
+      <div>AA battery (length)</div><div class="v mono">50.50 mm</div>
+      <div>US letter paper (width)</div><div class="v mono">215.90 mm</div>
+      <div>A4 paper (width)</div><div class="v mono">210.00 mm</div>
+    </div>
+  </details>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;">
+      <h2>Photo</h2>
+      <div class="row">
+        <button class="primary" id="btnCamera">Take Photo</button>
+        <button id="btnGallery">Choose Photo</button>
+      </div>
+    </div>
+    <input type="file" accept="image/*" capture="environment" id="camInput" hidden>
+    <input type="file" accept="image/*" id="galInput" hidden>
+
+    <div class="empty" id="emptyState">
+      No photo loaded yet. Take or choose one, or try the built-in sample to see how it works.
+      <div style="margin-top:10px;"><button id="btnSample">Load sample photo</button></div>
+    </div>
+
+    <div id="photoArea" hidden style="display:flex; flex-direction:column; gap:10px;">
+      <div>
+        <input type="text" id="photoName" placeholder="Name this photo, e.g. Top view" aria-label="Photo name">
+      </div>
+
+      <div class="status" id="statusBar" hidden>
+        <span id="statusText"></span>
+        <span class="row"><button id="btnUndoPt">Undo point</button><button id="btnCancelPlace">Cancel</button></span>
+      </div>
+
+      <div class="stagebox">
+        <div class="stage" id="stage">
+          <div class="wrap" id="wrap">
+            <img id="photoImg" alt="Loaded photo to measure">
+            <svg id="overlay"></svg>
+          </div>
+        </div>
+        <canvas id="loupe" width="224" height="224" hidden></canvas>
+      </div>
+
+      <div class="zoomrow">
+        <span>Zoom</span>
+        <input type="range" id="zoomSlider" min="1" max="8" step="0.1" value="1" aria-label="Zoom">
+        <span class="mono" id="zoomLabel">1.0x</span>
+      </div>
+      <div class="hint" id="gestureHint">Drag to pan. Pinch or use the slider to zoom.</div>
+
+      <div class="badge warn" id="calibBadge">Not calibrated. Set a reference first.</div>
+      <div class="badge" id="checkBadge" hidden></div>
+
+      <div class="panel" id="calibPanel" hidden>
+        <label id="calibLabel">Real length of the reference you just marked</label>
+        <div class="chips" id="calibChips"></div>
+        <input type="number" inputmode="decimal" step="any" id="calibInput" placeholder="Length in mm" aria-label="Real length in millimetres">
+        <div class="row">
+          <button class="primary" id="calibConfirm">Confirm</button>
+          <button id="calibCancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="panel" id="measPanel" hidden>
+        <label>Label this measurement</label>
+        <input type="text" id="measLabel" placeholder="e.g. Overall height" aria-label="Measurement label">
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <span class="sub" id="measKind">Measured</span>
+          <span class="readout mono" id="measReadout"></span>
+        </div>
+        <div class="row">
+          <button class="primary" id="measConfirm">Save</button>
+          <button id="measCancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="panel" id="nudgePanel" hidden>
+        <label>Fine-tune a point</label>
+        <div class="nudge">
+          <span class="pts" id="nudgePts"></span>
+          <span class="arrows">
+            <button class="u" id="nUp" aria-label="Move up">&uarr;</button>
+            <button class="l" id="nLeft" aria-label="Move left">&larr;</button>
+            <button class="d" id="nDown" aria-label="Move down">&darr;</button>
+            <button class="r" id="nRight" aria-label="Move right">&rarr;</button>
+          </span>
+        </div>
+        <span class="hint">Each press moves the point one screen pixel. Zoom in for finer steps.</span>
+      </div>
+
+      <div class="toolgrid">
+        <button class="tool" id="btnCalib">Set Reference</button>
+        <button class="tool" id="btnCheck" disabled>Check Scale</button>
+        <button class="tool" id="btnMeasure" disabled>Distance</button>
+        <button class="tool" id="btnCircle" disabled>Circle</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;">
+      <h2>Measurements</h2>
+      <div class="unittoggle">
+        <button id="unitMm" class="on">mm</button>
+        <button id="unitIn">in</button>
+      </div>
+    </div>
+    <div class="mlist" id="mlist"></div>
+    <div class="row" style="justify-content:space-between;">
+      <span class="row"><button id="btnCopy">Copy All</button><button id="btnCsv">Copy CSV</button></span>
+      <button class="danger" id="btnClearAll">Clear All</button>
+    </div>
+    <textarea class="copyfallback" id="copyFallback" hidden readonly aria-label="Copy text"></textarea>
+  </div>
+
+  <div class="sub" style="text-align:center;">Saved only in this browser on this phone. Nothing is uploaded. Photos are not stored, so reload a photo to see its marks again after closing the page. Copy your numbers into notes before clearing site data.</div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+  "use strict";
+  var MM_PER_IN = 25.4;
+  var REF_PRESETS = [
+    {label:"Quarter", mm:24.26},{label:"Nickel", mm:21.21},{label:"Penny", mm:19.05},{label:"Dime", mm:17.91},
+    {label:"Card long", mm:85.60},{label:"Card short", mm:53.98},{label:"AA battery", mm:50.50},
+    {label:"Letter W", mm:215.90},{label:"A4 W", mm:210.00}
+  ];
+  var C_REF="#3b6ea5", C_MEAS="#a86a22", C_HL="#d4351c";
+
+  var el = {};
+  ["btnCamera","btnGallery","camInput","galInput","btnSample","emptyState","photoArea","photoName","statusBar","statusText",
+   "btnUndoPt","btnCancelPlace","stage","wrap","photoImg","overlay","loupe","zoomSlider","zoomLabel","gestureHint",
+   "calibBadge","checkBadge","calibPanel","calibLabel","calibChips","calibInput","calibConfirm","calibCancel",
+   "measPanel","measLabel","measKind","measReadout","measConfirm","measCancel","nudgePanel","nudgePts","nUp","nLeft","nDown","nRight",
+   "btnCalib","btnCheck","btnMeasure","btnCircle","mlist","btnCopy","btnCsv","btnClearAll","copyFallback","toast","unitMm","unitIn"
+  ].forEach(function(id){ el[id]=document.getElementById(id); });
+
+  var SVGNS="http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs){ var n=document.createElementNS(SVGNS,tag); for(var k in attrs) n.setAttribute(k,attrs[k]); return n; }
+  function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+  function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+
+  var state = {
+    photo:null,            // {id,name,natW,natH,scale,refMm}
+    mode:"idle",           // idle | place
+    pending:null,          // {kind:'ref'|'check'|'dist'|'circle', need:n, pts:[], done:bool, sel:0}
+    unit: lsGet("photoCaliperUnit")==="in" ? "in" : "mm",
+    measurements:[],
+    highlight:null,
+    zoom:1
+  };
+  try{
+    var saved = JSON.parse(lsGet("photoCaliperMeasurements") || "[]");
+    if (Array.isArray(saved)) state.measurements = saved.filter(function(m){ return m && typeof m.mm==="number"; });
+  }catch(e){ state.measurements=[]; }
+  function saveMeasurements(){ lsSet("photoCaliperMeasurements", JSON.stringify(state.measurements)); }
+
+  function toast(msg){
+    el.toast.textContent=msg; el.toast.classList.add("show");
+    clearTimeout(toast._t); toast._t=setTimeout(function(){ el.toast.classList.remove("show"); }, 2200);
+  }
+  function fmtLen(mm){ return state.unit==="in" ? (mm/MM_PER_IN).toFixed(3)+" in" : mm.toFixed(2)+" mm"; }
+  function fmtM(m){ return (m.type==="circle" ? "Ø " : "") + fmtLen(m.mm); }
+
+  // ---------- overlay drawing (natural image pixel space) ----------
+  var gRef,gDone,gTemp,gHover;
+  function unitAttrs(){ var b=Math.max(state.photo?state.photo.natW:1000,1); return {r:b*0.0055, sw:b*0.0022, fs:b*0.02}; }
+  function clearG(g){ while(g && g.firstChild) g.removeChild(g.firstChild); }
+  function setupGroups(){
+    clearG(el.overlay);
+    el.overlay.setAttribute("viewBox","0 0 "+state.photo.natW+" "+state.photo.natH);
+    gRef=svgEl("g",{}); gDone=svgEl("g",{}); gTemp=svgEl("g",{}); gHover=svgEl("g",{});
+    [gRef,gDone,gTemp,gHover].forEach(function(g){ el.overlay.appendChild(g); });
+  }
+  function marker(g,pt,color,emph){
+    var a=unitAttrs();
+    g.appendChild(svgEl("circle",{cx:pt.x,cy:pt.y,r:a.r*(emph?2.1:1.6),fill:"none",stroke:"#fff","stroke-width":a.sw*1.8,opacity:.9}));
+    g.appendChild(svgEl("circle",{cx:pt.x,cy:pt.y,r:a.r*(emph?1.3:1),fill:color,stroke:"#fff","stroke-width":a.sw*.6}));
+  }
+  function textAt(g,x,y,text,color){
+    var a=unitAttrs();
+    var common={x:x,y:y,"text-anchor":"middle","font-size":a.fs,"font-family":"JetBrains Mono, monospace","font-weight":"700"};
+    var bg=svgEl("text",Object.assign({stroke:"#fff","stroke-width":a.fs*.22,fill:"#fff"},common)); bg.textContent=text;
+    var fg=svgEl("text",Object.assign({fill:color},common)); fg.textContent=text;
+    g.appendChild(bg); g.appendChild(fg);
+  }
+  function lineWithLabel(g,p1,p2,color,text){
+    var a=unitAttrs();
+    g.appendChild(svgEl("line",{x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y,stroke:"#fff","stroke-width":a.sw*2.2,"stroke-linecap":"round",opacity:.9}));
+    g.appendChild(svgEl("line",{x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y,stroke:color,"stroke-width":a.sw,"stroke-linecap":"round"}));
+    marker(g,p1,color); marker(g,p2,color);
+    if(text) textAt(g,(p1.x+p2.x)/2,(p1.y+p2.y)/2-a.r*2,text,color);
+  }
+  function circleDraw(g,c,color,text){
+    var a=unitAttrs();
+    g.appendChild(svgEl("circle",{cx:c.cx,cy:c.cy,r:c.r,fill:"none",stroke:"#fff","stroke-width":a.sw*2.2,opacity:.9}));
+    g.appendChild(svgEl("circle",{cx:c.cx,cy:c.cy,r:c.r,fill:"none",stroke:color,"stroke-width":a.sw}));
+    marker(g,{x:c.cx,y:c.cy},color);
+    if(text) textAt(g,c.cx,c.cy-c.r-a.r*2,text,color);
+  }
+  function circumcircle(p){
+    var ax=p[0].x,ay=p[0].y,bx=p[1].x,by=p[1].y,cx=p[2].x,cy=p[2].y;
+    var d=2*(ax*(by-cy)+bx*(cy-ay)+cx*(ay-by));
+    if(Math.abs(d)<1e-6) return null;
+    var a2=ax*ax+ay*ay,b2=bx*bx+by*by,c2=cx*cx+cy*cy;
+    var ux=(a2*(by-cy)+b2*(cy-ay)+c2*(ay-by))/d, uy=(a2*(cx-bx)+b2*(ax-cx)+c2*(bx-ax))/d;
+    return {cx:ux,cy:uy,r:Math.hypot(ax-ux,ay-uy)};
+  }
+  function redrawDone(){
+    clearG(gDone);
+    if(!state.photo) return;
+    state.measurements.forEach(function(m){
+      if(m.photoId!==state.photo.id) return;
+      var col = m.id===state.highlight ? C_HL : C_MEAS;
+      var txt = m.label;
+      if(m.type==="circle" && m.circ) circleDraw(gDone,m.circ,col,txt);
+      else if(m.p1&&m.p2) lineWithLabel(gDone,m.p1,m.p2,col,txt);
+    });
+  }
+  function redrawRef(){
+    clearG(gRef);
+    var p=state.photo; if(p&&p.refPts) lineWithLabel(gRef,p.refPts[0],p.refPts[1],C_REF,p.refMm+" mm ref");
+  }
+  function redrawTemp(hoverPt){
+    clearG(gTemp); clearG(gHover);
+    var pd=state.pending; if(!pd) return;
+    var col=(pd.kind==="ref"||pd.kind==="check")?C_REF:C_MEAS;
+    if(pd.kind==="circle" && pd.pts.length===3){
+      var c=circumcircle(pd.pts); if(c) circleDraw(gTemp,c,col,null);
+    } else if(pd.pts.length>=2 && pd.kind!=="circle"){
+      lineWithLabel(gTemp,pd.pts[0],pd.pts[1],col,null);
+    }
+    pd.pts.forEach(function(pt,i){ marker(gTemp,pt,col,pd.done && i===pd.sel); });
+    if(hoverPt) marker(gHover,hoverPt,col,true);
+  }
+
+  // ---------- photo loading ----------
+  function loadSrc(src, name){
+    el.photoImg.onload=function(){
+      var id=Date.now()+"-"+Math.random().toString(36).slice(2,6);
+      state.photo={id:id,name:name||"",natW:el.photoImg.naturalWidth,natH:el.photoImg.naturalHeight,scale:null,refMm:null,refPts:null};
+      el.photoName.value=state.photo.name;
+      state.pending=null; setMode("idle");
+      el.emptyState.hidden=true; el.photoArea.hidden=false;
+      setupGroups(); setZoom(1); updateBadges(); updateTools(); redrawDone(); renderList();
+      hidePanels();
+    };
+    el.photoImg.src=src;
+  }
+  function onFile(inp){
+    var f=inp.files&&inp.files[0]; if(!f) return;
+    var r=new FileReader();
+    r.onload=function(){ loadSrc(r.result, ""); };
+    r.readAsDataURL(f); inp.value="";
+  }
+  el.btnCamera.addEventListener("click",function(){ el.camInput.click(); });
+  el.btnGallery.addEventListener("click",function(){ el.galInput.click(); });
+  el.camInput.addEventListener("change",function(){ onFile(el.camInput); });
+  el.galInput.addEventListener("change",function(){ onFile(el.galInput); });
+  el.photoName.addEventListener("input",function(){ if(state.photo) state.photo.name=el.photoName.value; });
+
+  // synthetic sample: a coin (24.26 mm) and a 40 x 25 mm plate at 20 px/mm
+  el.btnSample.addEventListener("click",function(){
+    var c=document.createElement("canvas"); c.width=1600; c.height=1100;
+    var x=c.getContext("2d");
+    var g=x.createLinearGradient(0,0,1600,1100); g.addColorStop(0,"#c9ccd1"); g.addColorStop(1,"#a8adb4");
+    x.fillStyle=g; x.fillRect(0,0,1600,1100);
+    x.fillStyle="#d9b24a"; x.beginPath(); x.arc(380,420,24.26*20/2,0,7); x.fill();
+    x.strokeStyle="#8a6d1f"; x.lineWidth=6; x.stroke();
+    x.fillStyle="#b86f1c"; x.fillRect(800,300,40*20,25*20);
+    x.fillStyle="#2a2f36"; x.beginPath(); x.arc(1000,550,5*20,0,7); x.fill();
+    x.fillStyle="#fff"; x.font="bold 40px sans-serif"; x.fillText("SAMPLE: quarter = 24.26 mm, plate = 40 x 25 mm, hole = 10 mm",120,900);
+    loadSrc(c.toDataURL("image/png"),"Sample photo");
+    toast("Sample loaded. Try Set Reference on the coin.");
+  });
+
+  // ---------- zoom / pan / pinch ----------
+  function applyZoom(){
+    var p=state.photo; if(!p) return;
+    var w=el.stage.clientWidth*state.zoom, h=w*(p.natH/p.natW);
+    el.wrap.style.width=w+"px"; el.wrap.style.height=h+"px";
+    el.zoomSlider.value=state.zoom; el.zoomLabel.textContent=state.zoom.toFixed(1)+"x";
+  }
+  function setZoom(z, ax, ay){
+    z=Math.max(1,Math.min(8,z));
+    var rect=el.stage.getBoundingClientRect();
+    if(ax===undefined){ ax=rect.left+rect.width/2; ay=rect.top+rect.height/2; }
+    var oldW=el.wrap.offsetWidth||1, oldH=el.wrap.offsetHeight||1;
+    var fx=(el.stage.scrollLeft+ax-rect.left)/oldW, fy=(el.stage.scrollTop+ay-rect.top)/oldH;
+    state.zoom=z; applyZoom();
+    el.stage.scrollLeft=fx*el.wrap.offsetWidth-(ax-rect.left);
+    el.stage.scrollTop=fy*el.wrap.offsetHeight-(ay-rect.top);
+  }
+  el.zoomSlider.addEventListener("input",function(){ setZoom(parseFloat(el.zoomSlider.value)); });
+  window.addEventListener("resize",function(){ if(state.photo) applyZoom(); });
+
+  // ---------- pointer handling ----------
+  var ptrs={}, gesture=null, panStart=null;
+  function natPoint(cx,cy){
+    var r=el.wrap.getBoundingClientRect(), p=state.photo;
+    return {x:Math.max(0,Math.min(p.natW,(cx-r.left)/r.width*p.natW)), y:Math.max(0,Math.min(p.natH,(cy-r.top)/r.height*p.natH))};
+  }
+  function drawLoupe(cx,cy){
+    var p=state.photo, L=el.loupe, ctx=L.getContext("2d");
+    var sr=el.stage.getBoundingClientRect(), box=el.stage.parentNode.getBoundingClientRect();
+    var wr=el.wrap.getBoundingClientRect(), s=wr.width/p.natW;
+    var side=(112/3)/s; // 3x magnification of what is on screen
+    var np=natPoint(cx,cy);
+    ctx.fillStyle="#222"; ctx.fillRect(0,0,224,224);
+    try{ ctx.drawImage(el.photoImg,np.x-side/2,np.y-side/2,side,side,0,0,224,224); }catch(e){}
+    ctx.strokeStyle="#fff"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(112,92);ctx.lineTo(112,132);ctx.moveTo(92,112);ctx.lineTo(132,112); ctx.stroke();
+    ctx.strokeStyle="#d4351c"; ctx.lineWidth=1.5; ctx.stroke();
+    // keep the loupe away from the finger
+    var lx=cx-box.left, ly=cy-box.top;
+    L.style.left=(lx<150&&ly<150 ? box.width-120 : 8)+"px";
+    L.hidden=false;
+  }
+  el.stage.addEventListener("pointerdown",function(ev){
+    if(!state.photo) return;
+    el.stage.setPointerCapture && el.stage.setPointerCapture(ev.pointerId);
+    ptrs[ev.pointerId]={x:ev.clientX,y:ev.clientY,sx:ev.clientX,sy:ev.clientY};
+    var ids=Object.keys(ptrs);
+    if(ids.length===2){
+      var a=ptrs[ids[0]], b=ptrs[ids[1]];
+      gesture={d0:Math.hypot(a.x-b.x,a.y-b.y)||1, z0:state.zoom, mx:(a.x+b.x)/2, my:(a.y+b.y)/2};
+      el.loupe.hidden=true; redrawTemp(null);
+    } else if(ids.length===1){
+      gesture=null;
+      if(state.mode==="place"){ var np=natPoint(ev.clientX,ev.clientY); drawLoupe(ev.clientX,ev.clientY); redrawTemp(np); }
+      else panStart={x:ev.clientX,y:ev.clientY,sl:el.stage.scrollLeft,st:el.stage.scrollTop};
+    }
+    ev.preventDefault();
+  });
+  el.stage.addEventListener("pointermove",function(ev){
+    var p=ptrs[ev.pointerId]; if(!p) return;
+    p.x=ev.clientX; p.y=ev.clientY;
+    var ids=Object.keys(ptrs);
+    if(ids.length>=2 && gesture){
+      var a=ptrs[ids[0]], b=ptrs[ids[1]];
+      var d=Math.hypot(a.x-b.x,a.y-b.y)||1, mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+      var dx=mx-gesture.mx, dy=my-gesture.my;
+      el.stage.scrollLeft-=dx; el.stage.scrollTop-=dy;
+      setZoom(gesture.z0*d/gesture.d0, mx, my);
+      gesture.mx=mx; gesture.my=my;
+    } else if(ids.length===1){
+      if(state.mode==="place"){ var np=natPoint(ev.clientX,ev.clientY); drawLoupe(ev.clientX,ev.clientY); redrawTemp(np); }
+      else if(panStart){ el.stage.scrollLeft=panStart.sl-(ev.clientX-panStart.x); el.stage.scrollTop=panStart.st-(ev.clientY-panStart.y); }
+    }
+  });
+  function endPtr(ev,cancel){
+    var p=ptrs[ev.pointerId]; if(!p) return;
+    var wasSingle=Object.keys(ptrs).length===1 && !gesture;
+    delete ptrs[ev.pointerId];
+    if(Object.keys(ptrs).length===0){
+      el.loupe.hidden=true; panStart=null;
+      if(wasSingle && !cancel && state.mode==="place"){ placePoint(natPoint(ev.clientX,ev.clientY)); }
+      else if(state.mode==="place"){ redrawTemp(null); }
+      gesture=null;
+    }
+  }
+  el.stage.addEventListener("pointerup",function(ev){ endPtr(ev,false); });
+  el.stage.addEventListener("pointercancel",function(ev){ endPtr(ev,true); });
+
+  // ---------- placement flow ----------
+  var STATUS={
+    ref:["Tap one end of your reference object.","Tap the other end."],
+    check:["Check: tap one end of a second known length.","Tap the other end."],
+    dist:["Tap the first point.","Tap the second point."],
+    circle:["Tap a point on the edge of the circle.","Tap a second point on the edge.","Tap a third point on the edge."]
+  };
+  function setMode(m){
+    state.mode=m;
+    el.stage.classList.toggle("placing",m==="place");
+    var pd=state.pending;
+    var show = m==="place" && pd && !pd.done;
+    el.statusBar.hidden=!show;
+    if(show) el.statusText.textContent=STATUS[pd.kind][pd.pts.length];
+    el.gestureHint.textContent = m==="place"
+      ? "Press and drag to aim with the magnifier, release to place. Two fingers pinch and pan."
+      : "Drag to pan. Pinch or use the slider to zoom.";
+    ["btnCalib","btnCheck","btnMeasure","btnCircle"].forEach(function(id){ el[id].classList.remove("on"); });
+    if(show){ var map={ref:"btnCalib",check:"btnCheck",dist:"btnMeasure",circle:"btnCircle"}; el[map[pd.kind]].classList.add("on"); }
+  }
+  function hidePanels(){ el.calibPanel.hidden=true; el.measPanel.hidden=true; el.nudgePanel.hidden=true; }
+  function startPlace(kind){
+    hidePanels();
+    state.pending={kind:kind,need:STATUS[kind].length,pts:[],done:false,sel:0};
+    redrawTemp(null); setMode("place");
+  }
+  function cancelPlace(){ state.pending=null; clearG(gTemp); clearG(gHover); hidePanels(); setMode("idle"); }
+  function placePoint(pt){
+    var pd=state.pending; if(!pd||pd.done) return;
+    pd.pts.push(pt);
+    if(pd.pts.length>=pd.need){
+      if(pd.kind==="circle" && !circumcircle(pd.pts)){ pd.pts.pop(); redrawTemp(null); toast("Those points are in a line. Pick three spread around the edge."); return; }
+      pd.done=true; pd.sel=pd.pts.length-1; redrawTemp(null); setMode("idle"); openPending();
+    } else { redrawTemp(null); setMode("place"); }
+  }
+  el.btnUndoPt.addEventListener("click",function(){ var pd=state.pending; if(pd&&pd.pts.length){ pd.pts.pop(); redrawTemp(null); setMode("place"); } });
+  el.btnCancelPlace.addEventListener("click",cancelPlace);
+  el.btnCalib.addEventListener("click",function(){ if(state.photo) startPlace("ref"); });
+  el.btnCheck.addEventListener("click",function(){ if(state.photo&&state.photo.scale) startPlace("check"); });
+  el.btnMeasure.addEventListener("click",function(){ if(state.photo&&state.photo.scale) startPlace("dist"); });
+  el.btnCircle.addEventListener("click",function(){ if(state.photo&&state.photo.scale) startPlace("circle"); });
+
+  // ---------- pending result panels ----------
+  function pxd(a,b){ return Math.hypot(b.x-a.x,b.y-a.y); }
+  function buildChips(){
+    el.calibChips.innerHTML="";
+    REF_PRESETS.forEach(function(p){
+      var c=document.createElement("button"); c.type="button"; c.className="chip";
+      c.textContent=p.label+" ("+p.mm+" mm)";
+      c.addEventListener("click",function(){
+        el.calibInput.value=p.mm;
+        Array.prototype.forEach.call(el.calibChips.children,function(ch){ ch.classList.remove("active"); });
+        c.classList.add("active");
+      });
+      el.calibChips.appendChild(c);
+    });
+  }
+  buildChips();
+
+  function currentReadout(){
+    var pd=state.pending, s=state.photo.scale;
+    if(pd.kind==="dist") return {mm:pxd(pd.pts[0],pd.pts[1])/s, text:null};
+    if(pd.kind==="circle"){ var c=circumcircle(pd.pts); return c?{mm:2*c.r/s,circ:c}:null; }
+    return null;
+  }
+  function openPending(){
+    var pd=state.pending; if(!pd||!pd.done) return;
+    el.nudgePanel.hidden=false; buildNudge();
+    if(pd.kind==="ref"||pd.kind==="check"){
+      el.measPanel.hidden=true; el.calibPanel.hidden=false;
+      el.calibLabel.textContent = pd.kind==="ref" ? "Real length of the reference you just marked" : "Real length of this second known object";
+      el.calibInput.value="";
+      Array.prototype.forEach.call(el.calibChips.children,function(ch){ ch.classList.remove("active"); });
+    } else {
+      el.calibPanel.hidden=true; el.measPanel.hidden=false;
+      var n=state.measurements.filter(function(m){ return m.photoId===state.photo.id; }).length+1;
+      el.measLabel.value=(pd.kind==="circle"?"Diameter ":"Length ")+n;
+      el.measKind.textContent = pd.kind==="circle" ? "Diameter" : "Length";
+      refreshReadout();
+    }
+  }
+  function refreshReadout(){
+    var pd=state.pending; if(!pd||!pd.done||pd.kind==="ref"||pd.kind==="check") return;
+    var r=currentReadout(); if(!r) return;
+    el.measReadout.textContent=(pd.kind==="circle"?"Ø ":"")+fmtLen(r.mm);
+  }
+  function buildNudge(){
+    var pd=state.pending; el.nudgePts.innerHTML="";
+    pd.pts.forEach(function(_,i){
+      var b=document.createElement("button"); b.type="button"; b.textContent="Point "+(i+1);
+      if(i===pd.sel) b.className="on";
+      b.addEventListener("click",function(){ pd.sel=i; buildNudge(); redrawTemp(null); });
+      el.nudgePts.appendChild(b);
+    });
+  }
+  function nudge(dx,dy){
+    var pd=state.pending; if(!pd||!pd.done) return;
+    var f=state.photo.natW/el.wrap.offsetWidth, p=pd.pts[pd.sel];
+    var nx={x:p.x+dx*f,y:p.y+dy*f};
+    pd.pts[pd.sel]=nx;
+    if(pd.kind==="circle" && !circumcircle(pd.pts)){ pd.pts[pd.sel]=p; return; }
+    redrawTemp(null); refreshReadout();
+  }
+  el.nUp.addEventListener("click",function(){ nudge(0,-1); });
+  el.nDown.addEventListener("click",function(){ nudge(0,1); });
+  el.nLeft.addEventListener("click",function(){ nudge(-1,0); });
+  el.nRight.addEventListener("click",function(){ nudge(1,0); });
+
+  el.calibCancel.addEventListener("click",cancelPlace);
+  el.measCancel.addEventListener("click",cancelPlace);
+  el.calibConfirm.addEventListener("click",function(){
+    var pd=state.pending, mm=parseFloat(el.calibInput.value);
+    if(!mm||mm<=0){ toast("Enter a valid length in mm."); return; }
+    var d=pxd(pd.pts[0],pd.pts[1]); if(d<2){ toast("Those points are too close together."); return; }
+    var p=state.photo;
+    if(pd.kind==="ref"){
+      p.scale=d/mm; p.refMm=mm; p.refPts=[pd.pts[0],pd.pts[1]]; p.check=null;
+      redrawRef(); toast("Calibrated.");
+    } else {
+      var measured=d/p.scale, err=(measured-mm)/mm*100;
+      p.check={err:err,measured:measured,known:mm};
+      toast("Scale check: "+(err>=0?"+":"")+err.toFixed(1)+"%");
+    }
+    state.pending=null; clearG(gTemp); hidePanels(); setMode("idle"); updateBadges(); updateTools();
+  });
+  el.measConfirm.addEventListener("click",function(){
+    var pd=state.pending, p=state.photo, r=currentReadout(); if(!r) return;
+    var label=el.measLabel.value.trim()||"Measurement";
+    var item={id:Date.now()+"-"+Math.random().toString(36).slice(2,6),photoId:p.id,photoName:p.name||"Untitled photo",
+              label:label,type:pd.kind==="circle"?"circle":"dist",mm:r.mm};
+    if(pd.kind==="circle"){ item.circ=r.circ; item.pts=pd.pts.slice(); }
+    else { item.p1=pd.pts[0]; item.p2=pd.pts[1]; }
+    state.measurements.push(item); saveMeasurements();
+    state.pending=null; clearG(gTemp); hidePanels(); setMode("idle");
+    redrawDone(); renderList(); toast("Saved.");
+  });
+
+  function updateBadges(){
+    var p=state.photo;
+    if(p&&p.scale){
+      el.calibBadge.className="badge ok";
+      el.calibBadge.textContent="Calibrated: "+p.scale.toFixed(2)+" px/mm (reference "+p.refMm+" mm)";
+    } else { el.calibBadge.className="badge warn"; el.calibBadge.textContent="Not calibrated. Set a reference first."; }
+    if(p&&p.check){
+      var bad=Math.abs(p.check.err)>3;
+      el.checkBadge.hidden=false; el.checkBadge.className="badge "+(bad?"bad":"ok");
+      el.checkBadge.textContent="Scale check: "+(p.check.err>=0?"+":"")+p.check.err.toFixed(1)+"% off ("+p.check.measured.toFixed(2)+" mm vs "+p.check.known+" mm)"+(bad?". Phone was probably tilted; retake the photo.":". Good.");
+    } else el.checkBadge.hidden=true;
+  }
+  function updateTools(){
+    var ok=!!(state.photo&&state.photo.scale);
+    el.btnCheck.disabled=!ok; el.btnMeasure.disabled=!ok; el.btnCircle.disabled=!ok;
+  }
+
+  // ---------- list ----------
+  function renderList(){
+    el.mlist.innerHTML="";
+    if(!state.measurements.length){
+      var e=document.createElement("div"); e.className="emptylist";
+      e.textContent="No measurements yet. Calibrate a photo, then use Distance or Circle."; el.mlist.appendChild(e); return;
+    }
+    state.measurements.forEach(function(m){
+      var row=document.createElement("div"); row.className="mrow"+(m.id===state.highlight?" hl":"");
+      var top=document.createElement("div"); top.className="top";
+      var input=document.createElement("input"); input.type="text"; input.value=m.label; input.setAttribute("aria-label","Measurement label");
+      input.addEventListener("input",function(){ m.label=input.value; saveMeasurements(); redrawDone(); });
+      var val=document.createElement("span"); val.className="val mono"; val.textContent=fmtM(m);
+      var del=document.createElement("button"); del.className="del"; del.setAttribute("aria-label","Delete measurement"); del.textContent="×";
+      del.addEventListener("click",function(){
+        state.measurements=state.measurements.filter(function(x){ return x.id!==m.id; });
+        saveMeasurements(); renderList(); redrawDone();
+      });
+      top.appendChild(input); top.appendChild(val); top.appendChild(del);
+      var meta=document.createElement("button"); meta.className="meta"; meta.type="button";
+      meta.textContent=(m.type==="circle"?"Circle":"Distance")+" · "+(m.photoName||"Untitled photo")+(state.photo&&m.photoId===state.photo.id?" · show on photo":"");
+      meta.addEventListener("click",function(){
+        if(!state.photo||m.photoId!==state.photo.id){ toast("Measured on a different photo."); return; }
+        state.highlight=(state.highlight===m.id?null:m.id); renderList(); redrawDone();
+      });
+      row.appendChild(top); row.appendChild(meta); el.mlist.appendChild(row);
+    });
+  }
+  function setUnit(u){ state.unit=u; lsSet("photoCaliperUnit",u); el.unitMm.classList.toggle("on",u==="mm"); el.unitIn.classList.toggle("on",u==="in"); renderList(); refreshReadout(); }
+  el.unitMm.addEventListener("click",function(){ setUnit("mm"); });
+  el.unitIn.addEventListener("click",function(){ setUnit("in"); });
+
+  // ---------- copy / clear ----------
+  function copyText(text,okMsg){
+    function fallback(){ el.copyFallback.value=text; el.copyFallback.hidden=false; el.copyFallback.focus(); el.copyFallback.select(); toast("Select and copy the text below."); }
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){ el.copyFallback.hidden=true; toast(okMsg); }).catch(fallback);
+    } else fallback();
+  }
+  el.btnCopy.addEventListener("click",function(){
+    if(!state.measurements.length){ toast("Nothing to copy yet."); return; }
+    var lines=["Photo Caliper measurements"], last=null;
+    state.measurements.forEach(function(m){
+      if(m.photoName!==last){ lines.push("","["+(m.photoName||"Untitled photo")+"]"); last=m.photoName; }
+      lines.push("- "+m.label+": "+fmtM(m));
+    });
+    copyText(lines.join("\n"),"Copied to clipboard.");
+  });
+  el.btnCsv.addEventListener("click",function(){
+    if(!state.measurements.length){ toast("Nothing to copy yet."); return; }
+    function q(s){ return '"'+String(s).replace(/"/g,'""')+'"'; }
+    var rows=["photo,label,type,mm,inches"];
+    state.measurements.forEach(function(m){
+      rows.push([q(m.photoName||""),q(m.label),m.type==="circle"?"diameter":"length",m.mm.toFixed(3),(m.mm/MM_PER_IN).toFixed(4)].join(","));
+    });
+    copyText(rows.join("\n"),"CSV copied.");
+  });
+  var armed=false;
+  el.btnClearAll.addEventListener("click",function(){
+    if(!armed){ armed=true; el.btnClearAll.textContent="Tap again to confirm"; setTimeout(function(){ armed=false; el.btnClearAll.textContent="Clear All"; },3000); return; }
+    armed=false; el.btnClearAll.textContent="Clear All";
+    state.measurements=[]; state.highlight=null; saveMeasurements(); renderList(); redrawDone(); toast("Cleared.");
+  });
+
+  setUnit(state.unit); renderList();
+})();
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+}
+</script>
+</body></html>
